@@ -32,7 +32,6 @@ package macaroons
 #cgo LDFLAGS: -L../../../.libs -lmacaroons -lsodium
 #include <stdio.h>
 #include <stdlib.h>
-#include <string.h>
 #include "macaroons.h"
 */
 import "C"
