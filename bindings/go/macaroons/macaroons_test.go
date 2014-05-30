@@ -3,7 +3,7 @@ package macaroons
 import (
 	"testing"
 
-	gc "github.com/cmars/check"
+	gc "gopkg.in/check.v1"
 )
 
 func Test(t *testing.T) { gc.TestingT(t) }
