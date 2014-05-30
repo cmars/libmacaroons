@@ -36,10 +36,7 @@ package macaroons
 */
 import "C"
 
-import (
-	"fmt"
-	"unsafe"
-)
+import "fmt"
 
 /*
 cdef extern from "macaroons.h":
@@ -63,30 +60,21 @@ cdef extern from "macaroons.h":
 
 */
 
-type Macaroon struct {
-	m *C.struct_macaroon
-}
-
+// macaroonError returns an error describing the macaroon return code.
 func macaroonError(err C.enum_macaroon_returncode) error {
 	return fmt.Errorf("error %d", err)
 }
 
+type Macaroon struct {
+	m *C.struct_macaroon
+}
+
 func New(location, key, id string) (*Macaroon, error) {
 	var err C.enum_macaroon_returncode
-
-	cLocation := (*C.uchar)(unsafe.Pointer(C.CString(location)))
-	defer C.free(unsafe.Pointer(cLocation))
-	cLocSz := C.size_t(len(location))
-
-	cKey := (*C.uchar)(unsafe.Pointer(C.CString(key)))
-	defer C.free(unsafe.Pointer(cKey))
-	cKeySz := C.size_t(len(key))
-
-	cId := (*C.uchar)(unsafe.Pointer(C.CString(id)))
-	defer C.free(unsafe.Pointer(cId))
-	cIdSz := C.size_t(len(id))
-
-	m := C.macaroon_create(cLocation, cLocSz, cKey, cKeySz, cId, cIdSz, &err)
+	cLoc, cLocSz := cUStrN(location)
+	cKey, cKeySz := cUStrN(key)
+	cId, cIdSz := cUStrN(id)
+	m := C.macaroon_create(cLoc, cLocSz, cKey, cKeySz, cId, cIdSz, &err)
 	if err != 0 {
 		defer C.macaroon_destroy(m)
 		return nil, macaroonError(err)
@@ -110,10 +98,7 @@ func (m *Macaroon) Validate() error {
 func (m *Macaroon) newFirstPartyCaveat(predicate string) (*Macaroon, error) {
 	var err C.enum_macaroon_returncode
 
-	cPred := (*C.uchar)(unsafe.Pointer(C.CString(predicate)))
-	defer C.free(unsafe.Pointer(cPred))
-	cPredSz := C.size_t(len(predicate))
-
+	cPred, cPredSz := cUStrN(predicate)
 	mPrime := C.macaroon_add_first_party_caveat(m.m, cPred, cPredSz, &err)
 	if err != 0 {
 		return nil, macaroonError(err)
@@ -134,24 +119,14 @@ func (m *Macaroon) WithFirstPartyCaveat(predicate string) error {
 
 func (m *Macaroon) newThirdPartyCaveat(location, key, id string) (*Macaroon, error) {
 	var err C.enum_macaroon_returncode
-
-	cLoc := (*C.uchar)(unsafe.Pointer(C.CString(location)))
-	defer C.free(unsafe.Pointer(cLoc))
-	cLocSz := C.size_t(len(location))
-
-	cKey := (*C.uchar)(unsafe.Pointer(C.CString(key)))
-	defer C.free(unsafe.Pointer(cKey))
-	cKeySz := C.size_t(len(key))
-
-	cId := (*C.uchar)(unsafe.Pointer(C.CString(id)))
-	defer C.free(unsafe.Pointer(cId))
-	cIdSz := C.size_t(len(id))
-
-	mPrime := C.macaroon_add_third_party_caveat(m.m, cLoc, cLocSz, cKey, cKeySz, cId, cIdSz, &err)
+	cLoc, cLocSz := cUStrN(location)
+	cKey, cKeySz := cUStrN(key)
+	cId, cIdSz := cUStrN(id)
+	mNew := C.macaroon_add_third_party_caveat(m.m, cLoc, cLocSz, cKey, cKeySz, cId, cIdSz, &err)
 	if err != 0 {
 		return nil, macaroonError(err)
 	}
-	return &Macaroon{mPrime}, nil
+	return &Macaroon{mNew}, nil
 }
 
 func (m *Macaroon) WithThirdPartyCaveat(location, key, id string) error {
@@ -170,7 +145,7 @@ func (m *Macaroon) Serialize() (string, error) {
 
 	n := C.macaroon_serialize_size_hint(m.m)
 	buf := make([]byte, n)
-	data := ((*C.char)(unsafe.Pointer(&buf[0])))
+	data := cBytes(buf)
 
 	sz := C.macaroon_serialize(m.m, data, n, &err)
 	if err != 0 {
