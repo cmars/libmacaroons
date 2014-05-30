@@ -36,9 +36,18 @@ func (s *Suite) TestHelloMacaroons(c *gc.C) {
 	c.Check(m2.Signature(), gc.Equals, m.Signature())
 	c.Check(m2.Location(), gc.Equals, "test")
 	c.Check(m2.Id(), gc.Equals, "AzureDiamond")
+	c.Check(Cmp(m, m2), gc.Equals, 0)
 
 	err = m2.Validate()
 	c.Assert(err, gc.IsNil)
+
+	m3, err := m2.Copy()
+	c.Assert(err, gc.IsNil)
+	defer m3.Destroy()
+	c.Check(m3.Signature(), gc.Equals, m.Signature())
+	c.Check(m3.Location(), gc.Equals, "test")
+	c.Check(m3.Id(), gc.Equals, "AzureDiamond")
+	c.Check(Cmp(m, m3), gc.Equals, 0)
 }
 
 func (s *Suite) TestCaveatsChangeThings(c *gc.C) {
@@ -75,6 +84,14 @@ func (s *Suite) TestCaveatsChangeThings(c *gc.C) {
 		c.Assert(last, gc.Not(gc.Equals), next)
 		last = next
 	}
+
+	tps, err := m.ThirdPartyCaveats()
+	c.Assert(err, gc.IsNil)
+	c.Assert(tps, gc.HasLen, 4)
+	c.Check(tps[0], gc.DeepEquals, ThirdPartyId{Location: "axton", Id: "turret"})
+	c.Check(tps[1], gc.DeepEquals, ThirdPartyId{Location: "maya", Id: "phaselock"})
+	c.Check(tps[2], gc.DeepEquals, ThirdPartyId{Location: "salvador", Id: "dual-wield"})
+	c.Check(tps[3], gc.DeepEquals, ThirdPartyId{Location: "zero", Id: "hologram"})
 }
 
 func (s *Suite) TestInspect(c *gc.C) {
