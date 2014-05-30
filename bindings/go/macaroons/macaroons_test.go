@@ -13,7 +13,7 @@ type Suite struct{}
 var _ = gc.Suite(&Suite{})
 
 func (s *Suite) TestHelloMacaroons(c *gc.C) {
-	m, err := New("test", "hunter2", "AzureDiamond")
+	m, err := NewMacaroon("test", "hunter2", "AzureDiamond")
 	c.Assert(err, gc.IsNil)
 	defer m.Destroy()
 	c.Assert(m, gc.NotNil)
@@ -42,7 +42,7 @@ func (s *Suite) TestHelloMacaroons(c *gc.C) {
 }
 
 func (s *Suite) TestCaveatsChangeThings(c *gc.C) {
-	m, err := New("pandora", "catch a ride", "scooter")
+	m, err := NewMacaroon("pandora", "catch a ride", "scooter")
 	c.Assert(err, gc.IsNil)
 	defer m.Destroy()
 
@@ -78,7 +78,7 @@ func (s *Suite) TestCaveatsChangeThings(c *gc.C) {
 }
 
 func (s *Suite) TestInspect(c *gc.C) {
-	m, err := New("ingsoc", "under the spreading chestnut tree", "wsmith")
+	m, err := NewMacaroon("ingsoc", "under the spreading chestnut tree", "wsmith")
 	c.Assert(err, gc.IsNil)
 	defer m.Destroy()
 

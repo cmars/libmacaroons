@@ -71,7 +71,7 @@ type Macaroon struct {
 	m *C.struct_macaroon
 }
 
-func New(location, key, id string) (*Macaroon, error) {
+func NewMacaroon(location, key, id string) (*Macaroon, error) {
 	var err C.enum_macaroon_returncode
 	cLoc, cLocSz := cUStrN(location)
 	cKey, cKeySz := cUStrN(key)
