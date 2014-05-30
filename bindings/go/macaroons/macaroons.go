@@ -32,37 +32,39 @@ package macaroons
 #cgo LDFLAGS: -L../../../.libs -lmacaroons -lsodium
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 #include "macaroons.h"
 */
 import "C"
 
-import "fmt"
-
-/*
-cdef extern from "macaroons.h":
-
-    DEF MACAROON_MAX_STRLEN  = 32768
-    DEF MACAROON_MAX_CAVEATS = 65536
-
-    cdef struct macaroon
-    cdef struct macaroon_verifier
-
-    cdef enum macaroon_returncode:
-        MACAROON_SUCCESS          = 2048
-        MACAROON_OUT_OF_MEMORY    = 2049
-        MACAROON_HASH_FAILED      = 2050
-        MACAROON_INVALID          = 2051
-        MACAROON_TOO_MANY_CAVEATS = 2052
-        MACAROON_CYCLE            = 2053
-        MACAROON_BUF_TOO_SMALL    = 2054
-        MACAROON_NOT_AUTHORIZED   = 2055
-        MACAROON_NO_JSON_SUPPORT  = 2056
-
-*/
+import (
+	"bytes"
+	"fmt"
+)
 
 // macaroonError returns an error describing the macaroon return code.
 func macaroonError(err C.enum_macaroon_returncode) error {
-	return fmt.Errorf("error %d", err)
+	switch err {
+	case C.MACAROON_SUCCESS:
+		return nil
+	case C.MACAROON_OUT_OF_MEMORY:
+		return fmt.Errorf("out of memory")
+	case C.MACAROON_HASH_FAILED:
+		return fmt.Errorf("hash failed")
+	case C.MACAROON_INVALID:
+		return fmt.Errorf("invalid")
+	case C.MACAROON_TOO_MANY_CAVEATS:
+		return fmt.Errorf("too many caveats")
+	case C.MACAROON_CYCLE:
+		return fmt.Errorf("cycle")
+	case C.MACAROON_BUF_TOO_SMALL:
+		return fmt.Errorf("buffer too small")
+	case C.MACAROON_NOT_AUTHORIZED:
+		return fmt.Errorf("not authorized")
+	case C.MACAROON_NO_JSON_SUPPORT:
+		return fmt.Errorf("no JSON support")
+	}
+	return fmt.Errorf("unknown error %d", err)
 }
 
 type Macaroon struct {
@@ -140,7 +142,7 @@ func (m *Macaroon) WithThirdPartyCaveat(location, key, id string) error {
 	return nil
 }
 
-func (m *Macaroon) Serialize() (string, error) {
+func (m *Macaroon) Marshal() (string, error) {
 	var err C.enum_macaroon_returncode
 
 	n := C.macaroon_serialize_size_hint(m.m)
@@ -148,20 +150,63 @@ func (m *Macaroon) Serialize() (string, error) {
 	data := cBytes(buf)
 
 	sz := C.macaroon_serialize(m.m, data, n, &err)
-	if err != 0 {
+	if sz < 0 {
 		return "", macaroonError(err)
 	} else if sz < 0 {
 		return "", fmt.Errorf("serialization error")
 	}
+	buf = bytes.TrimRight(buf, nuls)
+	return string(buf), nil
+}
+
+func Unmarshal(s string) (*Macaroon, error) {
+	var err C.enum_macaroon_returncode
+	data := cStr(s)
+	m := C.macaroon_deserialize(data, &err)
+	if m == nil { // TODO: err gets set to INVALID even if this returns successful, fix that
+		return nil, macaroonError(err)
+	}
+	return &Macaroon{m}, nil
+}
+
+func (m *Macaroon) Location() string {
+	var loc *C.uchar
+	var locSz C.size_t
+	C.macaroon_location(m.m, &loc, &locSz)
+	return goStrN(loc, locSz)
+}
+
+func (m *Macaroon) Id() string {
+	var id *C.uchar
+	var idSz C.size_t
+	C.macaroon_identifier(m.m, &id, &idSz)
+	return goStrN(id, idSz)
+}
+
+func (m *Macaroon) Signature() string {
+	var sig *C.uchar
+	var sigSz C.size_t
+	C.macaroon_signature(m.m, &sig, &sigSz)
+	return goStrN(sig, sigSz)
+}
+
+func (m *Macaroon) Inspect() (string, error) {
+	var err C.enum_macaroon_returncode
+	n := C.macaroon_inspect_size_hint(m.m)
+	buf := make([]byte, n)
+	data := cBytes(buf)
+
+	sz := C.macaroon_inspect(m.m, data, n, &err)
+	if sz < 0 {
+		return "", macaroonError(err)
+	} else if sz < 0 {
+		return "", fmt.Errorf("serialization error")
+	}
+	buf = bytes.TrimRight(buf, nuls)
 	return string(buf), nil
 }
 
 /*
-    macaroon* macaroon_create(unsigned char* location, size_t location_sz, unsigned char* key, size_t key_sz, unsigned char* id, size_t id_sz, macaroon_returncode* err)
-    void macaroon_destroy(macaroon* M)
-    int macaroon_validate(const macaroon* M)
-    macaroon* macaroon_add_first_party_caveat(const macaroon* M, const unsigned char* predicate, size_t predicate_sz, macaroon_returncode* err)
-    macaroon* macaroon_add_third_party_caveat(const macaroon* M, const unsigned char* location, size_t location_sz, const unsigned char* key, size_t key_sz, const unsigned char* id, size_t id_sz, macaroon_returncode* err)
     unsigned macaroon_num_third_party_caveats(const macaroon* M)
     int macaroon_third_party_caveat(const macaroon* M, unsigned which, const unsigned char** location, size_t* location_sz, const unsigned char** identifier, size_t* identifier_sz)
     macaroon* macaroon_prepare_for_request(const macaroon* M, const macaroon* D, macaroon_returncode* err)
@@ -170,16 +215,6 @@ func (m *Macaroon) Serialize() (string, error) {
     int macaroon_verifier_satisfy_exact(macaroon_verifier* V, const unsigned char* predicate, size_t predicate_sz, macaroon_returncode* err)
     int macaroon_verifier_satisfy_general(macaroon_verifier* V, int (*general_check)(void* f, const unsigned char* pred, size_t pred_sz), void* f, macaroon_returncode* err)
     int macaroon_verify(const macaroon_verifier* V, const macaroon* M, const unsigned char* key, size_t key_sz, macaroon** MS, size_t MS_sz, macaroon_returncode* err)
-    void macaroon_location(const macaroon* M, const unsigned char** location, size_t* location_sz)
-    void macaroon_identifier(const macaroon* M, const unsigned char** identifier, size_t* identifier_sz)
-    void macaroon_signature(const macaroon* M, const unsigned char** signature, size_t* signature_sz)
-    size_t macaroon_serialize_size_hint(macaroon* M)
-    int macaroon_serialize(macaroon* M, char* data, size_t data_sz, macaroon_returncode* err)
-    size_t macaroon_serialize_json_size_hint(const macaroon* M)
-    int macaroon_serialize_json(const macaroon* M, char* data, size_t data_sz, macaroon_returncode* err)
-    macaroon* macaroon_deserialize(char* data, macaroon_returncode* err)
-    size_t macaroon_inspect_size_hint(macaroon* M)
-    int macaroon_inspect(macaroon* M, char* data, size_t data_sz, macaroon_returncode* err)
     macaroon* macaroon_copy(macaroon* M, macaroon_returncode* err)
     int macaroon_cmp(macaroon* M, macaroon* N)
 

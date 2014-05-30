@@ -14,11 +14,12 @@ import (
 	"unsafe"
 )
 
-// cStrN returns a char* pointer to the first byte in s and the byte length of
-// the string.
-func cStrN(s string) (*C.char, C.size_t) {
+const nuls = "\x00"
+
+// cStr returns a char* pointer to the first byte in s.
+func cStr(s string) *C.char {
 	h := (*reflect.StringHeader)(unsafe.Pointer(&s))
-	return (*C.char)(unsafe.Pointer(h.Data)), C.size_t(len(s))
+	return (*C.char)(unsafe.Pointer(h.Data))
 }
 
 // cUStrN returns an unsigned char* pointer to the first byte in s and the byte
@@ -31,4 +32,14 @@ func cUStrN(s string) (*C.uchar, C.size_t) {
 // cBytes returns a pointer to the first byte in b.
 func cBytes(b []byte) *C.char {
 	return (*C.char)(unsafe.Pointer((*reflect.SliceHeader)(unsafe.Pointer(&b)).Data))
+}
+
+// goUStrN returns a Go representation of an n-unsigned byte C string.
+func goStrN(p *C.uchar, n C.size_t) (s string) {
+	if n > 0 {
+		h := (*reflect.StringHeader)(unsafe.Pointer(&s))
+		h.Data = uintptr(unsafe.Pointer(p))
+		h.Len = int(n)
+	}
+	return
 }
