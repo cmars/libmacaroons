@@ -82,7 +82,7 @@ func New(location, key, id string) (*Macaroon, error) {
 	return &Macaroon{m}, nil
 }
 
-func (m *Macaroon) Close() {
+func (m *Macaroon) Destroy() {
 	C.macaroon_destroy(m.m)
 	m.m = nil
 }
