@@ -33,11 +33,21 @@ package macaroons
 #include <stdio.h>
 #include <stdlib.h>
 #include "macaroons.h"
+#include "wrapper.h"
+
+
 */
 import "C"
 
+import (
+	"fmt"
+	"reflect"
+	"unsafe"
+)
+
 type Verifier struct {
-	v *C.struct_macaroon_verifier
+	v         *C.struct_macaroon_verifier
+	callbacks []GeneralCaveat
 }
 
 func NewVerifier() *Verifier {
@@ -58,7 +68,42 @@ func (v *Verifier) SatisfyExact(predicate string) error {
 	return nil
 }
 
-/*
-   int macaroon_verifier_satisfy_general(macaroon_verifier* V, int (*general_check)(void* f, const unsigned char* pred, size_t pred_sz), void* f, macaroon_returncode* err)
-   int macaroon_verify(const macaroon_verifier* V, const macaroon* M, const unsigned char* key, size_t key_sz, macaroon** MS, size_t MS_sz, macaroon_returncode* err)
-*/
+type GeneralCaveat func(s string) bool
+
+//export goGeneralCheck
+func goGeneralCheck(f unsafe.Pointer, pred *C.uchar, predSz C.size_t) C.int {
+	caveat := (*GeneralCaveat)(unsafe.Pointer(f))
+	if (*caveat)(goStrN(pred, predSz)) {
+		return 0
+	}
+	return -1
+}
+
+func (v *Verifier) SatisfyGeneral(caveat GeneralCaveat) error {
+	var err C.enum_macaroon_returncode
+	v.callbacks = append(v.callbacks, caveat)
+	rc := C.macaroon_verifier_satisfy_general(v.v, (*[0]byte)(C.cGeneralCheck) /*(*[0]byte)(unsafe.Pointer(&generalCheckFn))*/, unsafe.Pointer(&caveat), &err)
+	if rc < 0 {
+		return macaroonError(err)
+	}
+	return nil
+}
+
+func (v *Verifier) Verify(m *Macaroon, key string, discharges ...Macaroon) error {
+	var err C.enum_macaroon_returncode
+	msLen := C.size_t(len(discharges))
+	ms := make([]*C.struct_macaroon, msLen)
+	for i := range discharges {
+		ms[i] = discharges[i].m
+	}
+	msPtr := (**C.struct_macaroon)(unsafe.Pointer((*reflect.SliceHeader)(unsafe.Pointer(&ms)).Data))
+	keyPtr, keySz := cUStrN(key)
+	rc := C.macaroon_verify(v.v, m.m, keyPtr, keySz, msPtr, msLen, &err)
+	if rc == 0 {
+		return nil
+	}
+	if err != 0 {
+		return macaroonError(err)
+	}
+	return fmt.Errorf("verify error: %d", rc)
+}
