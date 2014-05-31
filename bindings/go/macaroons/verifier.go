@@ -89,7 +89,7 @@ func (v *Verifier) SatisfyGeneral(caveat GeneralCaveat) error {
 	return nil
 }
 
-func (v *Verifier) Verify(m *Macaroon, key string, discharges ...Macaroon) error {
+func (v *Verifier) Verify(m *Macaroon, key string, discharges ...*Macaroon) error {
 	var err C.enum_macaroon_returncode
 	msLen := C.size_t(len(discharges))
 	ms := make([]*C.struct_macaroon, msLen)

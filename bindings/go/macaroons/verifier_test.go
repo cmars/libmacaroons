@@ -21,7 +21,7 @@ func (s *Suite) TestVerifyExact(c *gc.C) {
 	func() {
 		v1 := NewVerifier()
 		defer v1.Destroy()
-		err = v1.Verify(m, "let the wookie win")
+		err = v1.Verify(m, secret)
 		c.Assert(err, gc.IsNil)
 	}()
 
@@ -79,19 +79,14 @@ func (s *Suite) TestVerifyExact(c *gc.C) {
 	}()
 }
 
-func (s *Suite) TestVerifyGeneral(c *gc.C) {
-	secret := "wait til you see those goddamn bats"
-	m, err := NewMacaroon("The Mint Hotel", secret, "hst")
-	c.Assert(err, gc.IsNil)
-	defer m.Destroy()
-	c.Assert(m, gc.NotNil)
+const timeLayout = "2006-01-02T15:04:05 -0700"
 
-	layout := "2006-01-02T15:04:05 -0700"
-	deadline, err := time.Parse(layout, "1971-11-11T16:00:00 -0800")
-	c.Assert(err, gc.IsNil)
-
-	v := NewVerifier()
-	err = v.SatisfyGeneral(func(s string) bool {
+func checkTimeAt(nowString string) GeneralCaveat {
+	now, err := time.Parse(timeLayout, nowString)
+	if err != nil {
+		panic(err)
+	}
+	return func(s string) bool {
 		fields := strings.SplitN(s, " ", 3)
 		if len(fields) != 3 {
 			return false
@@ -99,32 +94,85 @@ func (s *Suite) TestVerifyGeneral(c *gc.C) {
 		if fields[0] != "time" {
 			return false
 		}
-		if fields[1] != "=" {
+		if fields[1] != "<" {
 			return false
 		}
-		t, err := time.Parse(layout, fields[2])
+		deadline, err := time.Parse(timeLayout, fields[2])
 		if err != nil {
 			return false
 		}
-		return t.Before(deadline)
-	})
+		return now.Before(deadline)
+	}
+}
+
+func (s *Suite) TestVerifyGeneral(c *gc.C) {
+	secret := "wait til you see those goddamn bats"
+	m, err := NewMacaroon("The Mint Hotel", secret, "hst")
 	c.Assert(err, gc.IsNil)
+	defer m.Destroy()
+	c.Assert(m, gc.NotNil)
+
+	deadline := "time < 1971-11-11T16:00:00 -0800"
 
 	func() {
+		v := NewVerifier()
+		err = v.SatisfyGeneral(checkTimeAt("2014-05-08T23:40:00 +0000"))
+		c.Assert(err, gc.IsNil)
+
 		m2, err := m.Copy()
 		c.Assert(err, gc.IsNil)
-		err = m2.WithFirstPartyCaveat("time = 2014-05-08T23:40:00 +0000")
+		err = m2.WithFirstPartyCaveat(deadline)
 		c.Assert(err, gc.IsNil)
 		err = v.Verify(m2, secret)
 		c.Assert(err, gc.NotNil)
 	}()
 
 	func() {
+		v := NewVerifier()
+		err = v.SatisfyGeneral(checkTimeAt("1971-11-11T15:59:59 -0800"))
+		c.Assert(err, gc.IsNil)
+
 		m2, err := m.Copy()
 		c.Assert(err, gc.IsNil)
-		err = m2.WithFirstPartyCaveat("time = 1971-11-11T15:59:59 -0800")
+		err = m2.WithFirstPartyCaveat(deadline)
 		c.Assert(err, gc.IsNil)
 		err = v.Verify(m2, secret)
 		c.Assert(err, gc.IsNil)
 	}()
+}
+
+func (s *Suite) TestVerifyThirdParty(c *gc.C) {
+	secret := "this is a different super-secret key; never use the same secret twice"
+	public := "we used our other secret key"
+	location := "http://mybank/"
+	m, err := NewMacaroon(location, secret, public)
+	c.Assert(err, gc.IsNil)
+	defer m.Destroy()
+	c.Assert(m, gc.NotNil)
+	err = m.WithFirstPartyCaveat("account = 3735928559")
+	c.Assert(err, gc.IsNil)
+
+	caveatKey := "4; guaranteed random by a fair toss of the dice"
+	identifier := "this was how we remind auth of key/pred"
+	err = m.WithThirdPartyCaveat("http://auth.mybank/", caveatKey, identifier)
+	c.Assert(err, gc.IsNil)
+
+	discharge, err := NewMacaroon("http://auth.mybank/", caveatKey, identifier)
+	c.Assert(err, gc.IsNil)
+	defer discharge.Destroy()
+	err = discharge.WithFirstPartyCaveat("time < 2015-01-01T00:00:00 +0000")
+	c.Assert(err, gc.IsNil)
+
+	preparedDischarge, err := m.PrepareForRequest(discharge)
+	c.Assert(err, gc.IsNil)
+	defer preparedDischarge.Destroy()
+
+	v := NewVerifier()
+	defer v.Destroy()
+	err = v.SatisfyExact("account = 3735928559")
+	c.Assert(err, gc.IsNil)
+	err = v.SatisfyGeneral(checkTimeAt("2014-05-30T20:25:00 -0500"))
+	c.Assert(err, gc.IsNil)
+	err = v.Verify(m, secret, preparedDischarge)
+	c.Assert(err, gc.IsNil)
 }
